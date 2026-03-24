@@ -6,7 +6,7 @@ OSCP-aligned pentest methodology automation.
 
 Usage:
   sudo python3 bbr.py -t 192.168.1.0/24 -c "Acme Corp" -o ~/engagements
-  sudo python3 bbr.py -t 10.0.0.5 -c "Client XYZ" --phases recon,enum,ad,vulns
+  sudo python3 bbr.py -t 10.0.0.5 -c "Client XYZ" --phases recon,enum,ad,graph,acl,bh,chains,vulns
 
 AUTHORIZED USE ONLY. Run only against systems you have written permission to test.
 """
@@ -30,6 +30,8 @@ from modules.enum import EnumModule
 from modules.ad import ADModule
 from modules.graph import run_graph_analysis
 from modules.acl import run_acl_analysis
+from modules.bloodhound import run_bloodhound_analysis
+from modules.visualization import run_chain_visualization
 from modules.vulns import VulnModule
 from modules.report import ReportModule
 
@@ -110,7 +112,7 @@ def setup_engagement(args) -> dict:
         "start_time": now.isoformat(),
         "end_time":   None,
         "output_dir": str(out_dir),
-        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","graph","acl","vulns"],
+        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","graph","acl","bh","chains","vulns"],
     }
 
     # Save metadata immediately so engagement is on record
@@ -192,6 +194,34 @@ def run_phases(engagement: dict, args) -> dict:
             console.print(f"[{GOOD}]✔ Identified {crit_count} critical ACL abuse vectors[/{GOOD}]")
         else:
             console.print(f"[{WARN}]⚠ ACL analysis: {acl_result.get('status')}[/{WARN}]")
+    
+    # ── Phase 3.7: BloodHound Integration ────────────────────────────────
+    if "bh" in phases and ad_findings:
+        console.rule(f"[{ORANGE}]Phase 3.7 · BloodHound-CE Analysis[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Querying BloodHound attack paths[/{STEEL}]")
+        bh_result = run_bloodhound_analysis(out_dir)
+        findings.setdefault("bloodhound_analysis", {}).update(bh_result)
+        if bh_result.get("status") == "success":
+            critical = bh_result.get('analysis', {}).get('statistics', {})
+            console.print(f"[{GOOD}]✔ BloodHound analysis: {critical.get('unconstrained_delegation_count', 0)} "
+                         f"unconstrained delegations, {critical.get('kerberoastable_count', 0)} kerberoastable accounts[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ BloodHound: {bh_result.get('status')}[/{WARN}]")
+    
+    # ── Phase 3.8: Attack Chain Visualization ────────────────────────────
+    graph_findings = findings.get("graph_analysis", {})
+    if "chains" in phases and graph_findings.get("attack_paths"):
+        console.rule(f"[{ORANGE}]Phase 3.8 · Attack Chain Visualization[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Generating attack chain diagrams[/{STEEL}]")
+        viz_result = run_chain_visualization(graph_findings, 
+                                            findings.get("bloodhound_analysis", {}),
+                                            out_dir)
+        findings.setdefault("attack_chains", {}).update(viz_result)
+        if viz_result.get("status") == "success":
+            chain_count = len(viz_result.get('chains', []))
+            console.print(f"[{GOOD}]✔ Generated {chain_count} attack chain visualizations[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ Visualization: {viz_result.get('status')}[/{WARN}]")
 
     # ── Phase 4: Vulnerability Identification ────────────────────────────
     if "vulns" in phases and findings["hosts"]:
@@ -226,8 +256,8 @@ def main() -> None:
                         help="Operator name for report attribution")
     parser.add_argument("--scope",          default=None,
                         help="Written scope string for report (defaults to target)")
-    parser.add_argument("--phases",         default="recon,enum,ad,graph,acl,vulns",
-                        help="Comma-separated phases: recon,enum,ad,graph,acl,vulns")
+    parser.add_argument("--phases",         default="recon,enum,ad,graph,acl,bh,chains,vulns",
+                        help="Comma-separated phases: recon,enum,ad,graph,acl,bh,chains,vulns")
     parser.add_argument("--fast",           action="store_true",
                         help="Fast mode: top-1000 ports only, skip full port scan")
     parser.add_argument("-v", "--verbose",  action="store_true",

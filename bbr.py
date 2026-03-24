@@ -28,6 +28,8 @@ from rich import box
 from modules.recon import ReconModule
 from modules.enum import EnumModule
 from modules.ad import ADModule
+from modules.graph import run_graph_analysis
+from modules.acl import run_acl_analysis
 from modules.vulns import VulnModule
 from modules.report import ReportModule
 
@@ -108,7 +110,7 @@ def setup_engagement(args) -> dict:
         "start_time": now.isoformat(),
         "end_time":   None,
         "output_dir": str(out_dir),
-        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","vulns"],
+        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","graph","acl","vulns"],
     }
 
     # Save metadata immediately so engagement is on record
@@ -151,6 +153,7 @@ def run_phases(engagement: dict, args) -> dict:
         console.print(f"[{GOOD}]✔ Enumeration complete[/{GOOD}]")
 
     # ── Phase 3: Active Directory ────────────────────────────────────────
+    ad_findings = {}
     if "ad" in phases and findings["hosts"]:
         console.rule(f"[{ORANGE}]Phase 3 · Active Directory Analysis[/{ORANGE}]")
         ad_mod = ADModule(output_dir=out_dir, verbose=args.verbose)
@@ -162,9 +165,33 @@ def run_phases(engagement: dict, args) -> dict:
                 console.print(f"  [{WARN}]★ Domain Controller detected: {host}[/{WARN}]")
                 result = ad_mod.run(host, ports, data.get("enum", {}))
                 findings["hosts"][host].setdefault("ad", {}).update(result)
+                ad_findings = result  # Capture AD findings for graph/acl analysis
             else:
                 console.print(f"  [{STEEL}]  {host}: no AD signatures[/{STEEL}]")
         console.print(f"[{GOOD}]✔ AD analysis complete[/{GOOD}]")
+    
+    # ── Phase 3.5: Graph Analysis (Neo4j attack paths) ────────────────────
+    if "graph" in phases and ad_findings:
+        console.rule(f"[{ORANGE}]Phase 3.5 · Attack Path Analysis[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Analyzing AD relationships with Neo4j[/{STEEL}]")
+        graph_result = run_graph_analysis(ad_findings, out_dir)
+        findings.setdefault("graph_analysis", {}).update(graph_result)
+        if graph_result.get("status") == "success":
+            console.print(f"[{GOOD}]✔ Found {len(graph_result.get('attack_paths', []))} attack paths to Domain Admin[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ Graph analysis: {graph_result.get('status')}[/{WARN}]")
+    
+    # ── Phase 3.6: ACL Abuse Analysis ────────────────────────────────────
+    if "acl" in phases and ad_findings:
+        console.rule(f"[{ORANGE}]Phase 3.6 · ACL Abuse Detection[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Scanning for dangerous permissions[/{STEEL}]")
+        acl_result = run_acl_analysis(ad_findings)
+        findings.setdefault("acl_analysis", {}).update(acl_result)
+        if acl_result.get("status") == "success":
+            crit_count = acl_result.get('summary', {}).get('critical_vector_count', 0)
+            console.print(f"[{GOOD}]✔ Identified {crit_count} critical ACL abuse vectors[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ ACL analysis: {acl_result.get('status')}[/{WARN}]")
 
     # ── Phase 4: Vulnerability Identification ────────────────────────────
     if "vulns" in phases and findings["hosts"]:
@@ -199,8 +226,8 @@ def main() -> None:
                         help="Operator name for report attribution")
     parser.add_argument("--scope",          default=None,
                         help="Written scope string for report (defaults to target)")
-    parser.add_argument("--phases",         default="recon,enum,ad,vulns",
-                        help="Comma-separated phases: recon,enum,ad,vulns")
+    parser.add_argument("--phases",         default="recon,enum,ad,graph,acl,vulns",
+                        help="Comma-separated phases: recon,enum,ad,graph,acl,vulns")
     parser.add_argument("--fast",           action="store_true",
                         help="Fast mode: top-1000 ports only, skip full port scan")
     parser.add_argument("-v", "--verbose",  action="store_true",

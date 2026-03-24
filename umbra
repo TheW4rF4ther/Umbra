@@ -1,0 +1,6 @@
+#!/bin/bash
+# Blackbox Umbra Launcher
+# Penetration Testing Automation Platform
+# Blackbox Intelligence Group LLC
+
+exec sudo python3 /home/herecy/tools/bbr/bbr.py "$@"

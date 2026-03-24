@@ -32,6 +32,8 @@ from modules.graph import run_graph_analysis
 from modules.acl import run_acl_analysis
 from modules.bloodhound import run_bloodhound_analysis
 from modules.visualization import run_chain_visualization
+from modules.lateral_movement import run_lateral_movement_analysis
+from modules.persistence import run_persistence_analysis
 from modules.vulns import VulnModule
 from modules.report import ReportModule
 
@@ -112,7 +114,7 @@ def setup_engagement(args) -> dict:
         "start_time": now.isoformat(),
         "end_time":   None,
         "output_dir": str(out_dir),
-        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","graph","acl","bh","chains","vulns"],
+        "phases":    args.phases.split(",") if args.phases else ["recon","enum","ad","graph","acl","bh","chains","lateral","persist","vulns"],
     }
 
     # Save metadata immediately so engagement is on record
@@ -222,6 +224,34 @@ def run_phases(engagement: dict, args) -> dict:
             console.print(f"[{GOOD}]✔ Generated {chain_count} attack chain visualizations[/{GOOD}]")
         else:
             console.print(f"[{WARN}]⚠ Visualization: {viz_result.get('status')}[/{WARN}]")
+    
+    # ── Phase 3.9: Lateral Movement Analysis ─────────────────────────────
+    if "lateral" in phases and findings["hosts"]:
+        console.rule(f"[{ORANGE}]Phase 3.9 · Lateral Movement Detection[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Analyzing session hijacking opportunities[/{STEEL}]")
+        lateral_result = run_lateral_movement_analysis(findings["hosts"])
+        findings.setdefault("lateral_movement", {}).update(lateral_result)
+        if lateral_result.get("status") == "success" or lateral_result.get("status") == "completed":
+            hosts_with_sessions = lateral_result.get("hosts_analyzed", 0)
+            total_targets = lateral_result.get("hijack_targets", 0)
+            console.print(f"[{GOOD}]✔ Lateral analysis: {hosts_with_sessions} hosts analyzed, "
+                         f"{total_targets} hijack targets identified[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ Lateral movement: {lateral_result.get('status')}[/{WARN}]")
+    
+    # ── Phase 3.10: Persistence Mechanisms Analysis ───────────────────────
+    if "persist" in phases and findings["hosts"]:
+        console.rule(f"[{ORANGE}]Phase 3.10 · Persistence Mechanisms Detection[/{ORANGE}]")
+        console.print(f"  [{STEEL}]→ Scanning for persistence backdoors[/{STEEL}]")
+        persist_result = run_persistence_analysis(findings["hosts"])
+        findings.setdefault("persistence", {}).update(persist_result)
+        if persist_result.get("status") == "success":
+            total_artifacts = persist_result.get("total_artifacts", 0)
+            critical = persist_result.get("critical_artifacts", 0)
+            console.print(f"[{GOOD}]✔ Persistence analysis: {total_artifacts} artifacts found "
+                         f"({critical} critical)[/{GOOD}]")
+        else:
+            console.print(f"[{WARN}]⚠ Persistence: {persist_result.get('status')}[/{WARN}]")
 
     # ── Phase 4: Vulnerability Identification ────────────────────────────
     if "vulns" in phases and findings["hosts"]:
@@ -256,8 +286,8 @@ def main() -> None:
                         help="Operator name for report attribution")
     parser.add_argument("--scope",          default=None,
                         help="Written scope string for report (defaults to target)")
-    parser.add_argument("--phases",         default="recon,enum,ad,graph,acl,bh,chains,vulns",
-                        help="Comma-separated phases: recon,enum,ad,graph,acl,bh,chains,vulns")
+    parser.add_argument("--phases",         default="recon,enum,ad,graph,acl,bh,chains,lateral,persist,vulns",
+                        help="Comma-separated phases: recon,enum,ad,graph,acl,bh,chains,lateral,persist,vulns")
     parser.add_argument("--fast",           action="store_true",
                         help="Fast mode: top-1000 ports only, skip full port scan")
     parser.add_argument("-v", "--verbose",  action="store_true",

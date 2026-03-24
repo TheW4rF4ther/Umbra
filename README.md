@@ -1,12 +1,13 @@
 ```
- ██╗   ██╗███╗   ███╗██████╗ ██████╗  █████╗
+ ██╗   ██╗███╗   ███╗██████╗ ██████╗  █████╗ 
  ██║   ██║████╗ ████║██╔══██╗██╔══██╗██╔══██╗
  ██║   ██║██╔████╔██║██████╔╝██████╔╝███████║
  ██║   ██║██║╚██╔╝██║██╔══██╗██╔══██╗██╔══██║
  ╚██████╔╝██║ ╚═╝ ██║██████╔╝██║  ██║██║  ██║
   ╚═════╝ ╚═╝     ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
-   Blackbox Intelligence Group LLC
-   Automated Pentest Reconnaissance & Vulnerability Discovery
+   
+   🟠 Blackbox Intelligence Group LLC
+   Automated Pentest Reconnaissance & Exploitation
 ```
 
 # Blackbox Umbra
@@ -68,6 +69,26 @@ Built for **authorized penetration testing engagements only**. Umbra automates t
 - Password policy extraction
 - Credential cracking hash extraction (hashcat/John format)
 
+### Phase 3.5-3.8: Advanced Attack Path Analysis
+- **Graph Analysis (Neo4j)**: Shortest path to Domain Admin, attack primitives identification
+- **ACL Abuse Detection**: GenericAll, WriteProperty, WriteDacl, delegation abuse discovery
+- **BloodHound-CE Integration**: Unconstrained delegation chains, Kerberoastable accounts, AS-REP roastable users
+- **Attack Chain Visualization**: Mermaid diagrams with step-by-step execution instructions and tool recommendations
+
+### Phase 3.9: Lateral Movement Detection
+- **RDP Session Hijacking**: tscon.exe shadow hijacking, RPC session enumeration for takeover
+- **WinRM Exploitation**: Enter-PSSession & Invoke-Command targeting with credential mapping
+- **Stale Session Detection**: Token replay opportunities (inactive >24 hours)
+- **Lateral Path Mapping**: Host-to-host movement chains with privilege escalation recommendations
+
+### Phase 3.10: Persistence Mechanisms Detection
+- **Registry Run Keys**: HKCU/HKLM auto-start persistence artifact discovery
+- **Scheduled Tasks**: Suspicious command execution detection & classification
+- **Startup Folders**: Startup script persistence identification
+- **Windows Services**: Auto-start service abuse with unusual binary paths
+- **WMI Event Subscriptions**: Trigger-action persistence (EventFilter, Consumer, Binding)
+- **Cleanup Guides**: Automated remediation steps & artifact removal instructions
+
 ### Phase 4: Vulnerability Identification
 - **nmap NSE vuln scripts**: CVE-tagged service vulnerabilities
 - **searchsploit integration**: ExploitDB offline database matching on service versions
@@ -96,7 +117,7 @@ python3 bbr.py --help
 ### Basic Usage
 
 ```bash
-# Full engagement recon
+# Full engagement with ALL phases (recon through persistence)
 sudo python3 bbr.py -t 192.168.1.0/24 -c "Client Name" \
   --operator "Your Name" \
   --scope "Defined scope from ROE" \
@@ -105,8 +126,14 @@ sudo python3 bbr.py -t 192.168.1.0/24 -c "Client Name" \
 # Fast mode (top-1000 ports only)
 sudo python3 bbr.py -t 10.10.10.5 -c "Target" --fast
 
-# Specific phases
+# Specific phases (discovery only)
 sudo python3 bbr.py -t 10.0.0.0/24 -c "Network" --phases recon,enum,ad
+
+# Advanced attack path analysis phases
+sudo python3 bbr.py -t 10.0.0.5 -c "Domain" --phases graph,acl,bh,chains
+
+# Post-compromise phases (lateral movement & persistence)
+sudo python3 bbr.py -t 10.0.0.5 -c "Post-Comp" --phases lateral,persist
 
 # Verbose debugging
 sudo python3 bbr.py -t 10.10.10.5 -c "Debug" -v
@@ -186,14 +213,30 @@ impacket          # For AS-REP roasting & Kerberoasting
 
 ---
 
-## 🛡️ What Umbra Does NOT Do
+## 🛡️ What Umbra Does (and Doesn't)
 
+### ✅ Umbra Handles
+
+**Discovery & Initial Foothold:**
+- Network reconnaissance & host discovery
+- Service enumeration & version identification
+- Vulnerability identification & CVE matching
+- AD enumeration, Kerberoasting, AS-REP roasting
+- Attack path analysis & privilege escalation chains
+
+**Post-Compromise Assessment:**
+- Lateral movement opportunity detection (RDP, WinRM, SSH sessions)
+- Persistence mechanism analysis (Registry, Tasks, Services, WMI)
+- Cleanup guides & remediation recommendations
+
+### ✗ Umbra Does NOT Do
+
+- **Exploitation**: Umbra discovers vulnerabilities; manual exploitation is operator's responsibility
 - **SQLi, XXE, SSRF**: Manual web exploitation testing beyond basic HTTP headers
 - **Wireless auditing**: Use Aircrack-ng or similar specialized tools
 - **Physical security**: Social engineering or physical penetration
-- **Credential testing**: Brute-force attacks or known-good credential attempts (except null-session checks)
-- **Exploitation**: Umbra discovers vulnerabilities; it does NOT exploit them (intentionally)
-- **Post-exploitation**: Lateral movement, persistence, exfiltration (out of scope)
+- **Credential testing**: Brute-force attacks or credential spraying
+- **Active exploitation/execution**: No RCE triggers, no payload delivery (intentional separation of concerns)
 
 ---
 
@@ -208,16 +251,24 @@ This software is **not open source**. It is provided as-is for authorized use on
 ## 📊 Architecture
 
 ```
-bbr.py (main entrypoint)
+bbr.py (main entrypoint - single orchestration platform)
 ├── modules/
-│   ├── recon.py         → Host discovery, port/service scanning, OS detection
-│   ├── enum.py          → Service-specific enumeration (SMB, HTTP, LDAP, etc.)
-│   ├── ad.py            → Domain enumeration, Kerberoasting, AS-REP roasting
-│   ├── vulns.py         → nmap vuln check, searchsploit, netexec named checks
-│   └── report.py        → Markdown report + JSON findings + summary tables
-├── wordlists/           → Directory enumeration lists (optional, external)
-└── engagements/         → Output directory for all engagement data
+│   ├── recon.py              → Host discovery, port/service scanning, OS detection
+│   ├── enum.py               → Service-specific enumeration (SMB, HTTP, LDAP, RDP, WinRM, etc.)
+│   ├── ad.py                 → Domain enumeration, Kerberoasting, AS-REP roasting
+│   ├── graph.py              → Neo4j attack path analysis (Phase 3.5)
+│   ├── acl.py                → ACL abuse detection & delegation chains (Phase 3.6)
+│   ├── bloodhound.py         → BloodHound-CE integration & queries (Phase 3.7)
+│   ├── visualization.py      → Attack chain Mermaid diagrams (Phase 3.8)
+│   ├── lateral_movement.py   → Session hijacking & lateral paths (Phase 3.9)
+│   ├── persistence.py        → Persistence mechanisms detection (Phase 3.10)
+│   ├── vulns.py              → nmap vuln check, searchsploit, netexec named checks
+│   └── report.py             → Markdown report + JSON findings + summary tables
+├── wordlists/                → Directory enumeration lists (optional, external)
+└── engagements/              → Output directory for all engagement data
 ```
+
+**Single Platform Design**: All 10+ phases execute within bbr.py orchestration with data flowing seamlessly between modules.
 
 ---
 

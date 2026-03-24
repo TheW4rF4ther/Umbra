@@ -1,0 +1,5 @@
+# CODEOWNERS file for Blackbox Umbra
+# This repository only accepts pull requests from authorized team members
+# All pull requests require approval from the Blackbox Intelligence Group core team
+
+* @TheW4rF4ther
